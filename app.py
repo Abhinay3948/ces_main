@@ -296,7 +296,7 @@ if st.button("Generate  Report") and uploaded_files:
             st.error(f"Error generating report: {str(e)}")
 else:
     if not uploaded_files:
-        st.info("Please upload at least one document to generate the report.")
+        st.info("Please upload at least one PDF to generate the report.")
 
 # Chat Input for Q&A
 st.markdown("### Chatbot for PDf  ")
@@ -343,7 +343,7 @@ if user_query and faiss_index:
             st.error(f"Error generating answer: {str(e)}")
 else:
     if not uploaded_files:
-        st.info("Please upload at least one document to begin Q&A.")
+        st.info("Please upload at least one PDF to begin Q&A.")
     if not faiss_index and uploaded_files:
         st.info("Document indexing failed. Check error messages above.")
 
