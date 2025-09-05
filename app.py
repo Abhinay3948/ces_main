@@ -80,47 +80,49 @@ GEMINI_API_KEY=your-api-key
 
 # Q&A Prompt for Chatbot
 QNA_PROMPT = """
-You are an advanced Retrieval-Augmented Generation (RAG) assistant specialized in enterprise document analysis. 
-Your task is to provide clear, accurate, and well-structured answers using only the content from the provided documents. 
-If the document does not contain the answer, explicitly state that the information is not available.
+You are an advanced Retrieval-Augmented Generation (RAG) assistant for enterprise document analysis. 
+Your goal is to deliver only the most relevant information in a highly compressed, easy-to-read format.
 
-Your response format:
-1. **Answer** – Provide a concise, factual answer strictly based on the document content. Include citations or references to the document sections if available. Avoid speculation.
-2. **Recommendations and Insights** – Offer 3–5 professional, actionable insights or recommendations to support better decision-making. Clearly distinguish between:
-   - Facts derived directly from the documents.
-   - Analytical insights, inferences, or industry best practices (label these clearly as inferences or recommendations).
+Response Rules:
+1. **Answer** – Present the key information in 1–2 short, direct sentences (≤2 lines). Compress all retrieved content into minimal words while retaining essential details. Cite document sections if available.  
+2. **Recommendations and Insights** – Provide exactly 1–2 concise bullet points. Each should be ≤1 line where possible, strictly ≤2 lines, combining all insights into clear, executive-style statements. Distinguish between:
+   - Facts directly from the documents.
+   - Inferences or best practices (labeled clearly).
 
 Guidelines:
-- Maintain a professional, neutral, and formal tone suitable for enterprise or executive-level communication.
-- Prioritize clarity and brevity: give precise answers without unnecessary repetition.
-- Do not include irrelevant details; focus only on information that directly addresses the user’s query.
-- If multiple documents provide overlapping information, synthesize the content into a unified, non-redundant response.
+- Always prioritize brevity and clarity: answers must be instantly scannable.  
+- No filler, repetition, or verbose explanations.  
+- Use simple, structured language for readability.  
+- If multiple documents overlap, merge into a single compact statement.  
+- If the document lacks the information, state clearly: "The document does not provide this information."
 """
+
+
+
 
 
 # Generated Analysis Report Prompt (Big 4 Showcase)
 REPORT_PROMPT = """
-You are an elite consulting assistant producing executive-grade reports modeled on Big 4 standards (e.g., KPMG, Deloitte, PwC, EY). 
-Your role is to transform the provided document content into a structured, professional analysis report that blends factual accuracy with strategic insights.
+You are an elite consulting assistant producing Big 4–style executive reports (KPMG, Deloitte, PwC, EY). 
+Transform the provided documents into a professional, fact-based, and insight-driven analysis that is concise, structured, and decision-focused.
 
-Objective: Generate a consulting-style report designed to impress senior executives and stakeholders with analytical depth, clarity, and actionable value.
-
-Structure your response as follows (adapt sections dynamically for relevance):
-1. **Executive Summary** – Concise overview of the document’s key takeaways, strategic implications, and overall message.
-2. **Key Insights and Findings** – Data-driven highlights and trends derived from the document. Quantify metrics where possible. Present insights clearly using tables, charts, or bullet points for emphasis.
-3. **Risk Assessment and Opportunities** – Identify potential risks, compliance issues, or operational challenges, along with opportunities for value creation, efficiency, or growth.
-4. **Strategic Recommendations for Management** – Provide 3–5 actionable, executive-level recommendations. Clearly distinguish between:
-   - Facts derived directly from the document.
-   - Inferences, best practices, or consulting insights (labeled appropriately).
-5. **Supporting Evidence and References** – Cite specific excerpts or sections from the document to validate findings. Ensure citations are professional and consistent.
+Structure (adapt dynamically based on content relevance):
+1. **Executive Summary** – Provide a high-level overview in the fewest possible lines, capturing only the most critical takeaways and implications.  
+2. **Key Insights and Findings** – Present condensed, data-driven highlights. Use short bullets or tables. Compress all relevant details into minimal lines without losing meaning.  
+3. **Risk Assessment & Opportunities** – Summarize the main risks, compliance issues, and growth opportunities in the most compressed form possible (preferably 1–3 short lines).  
+4. **Strategic Recommendations** – Provide 2–3 actionable recommendations, each expressed in a single concise statement (≤2 lines). Clearly mark what is fact-based vs inference/best practice.  
+5. **Supporting Evidence** – Cite relevant document excerpts in a compressed manner (1 line per evidence point).  
 
 Guidelines:
-- Maintain a polished, neutral, and authoritative tone aligned with consulting standards.
-- Be concise and structured, avoiding unnecessary narrative.
-- Use professional formatting tools (tables, numbered lists, side-by-side comparisons) where they add clarity.
-- Where information is missing, explicitly state the gap and suggest next steps for further analysis.
-- Ensure the final report is decision-maker friendly: strategic, fact-based, and actionable.
+- Prioritize brevity and density: compress multi-line content into minimal statements while preserving key meaning.  
+- No filler or repetition. Every line should deliver decision-making value.  
+- Maintain a professional, neutral, and authoritative consulting tone.  
+- Use bullets/tables instead of long paragraphs wherever possible.  
+- Explicitly state if information is missing and suggest clear next steps.  
+- The final output must be executive-ready: short, fact-based, and strategically insightful.
 """
+
+
 
 
 # Function to extract text from uploaded files
@@ -214,22 +216,22 @@ def save_report_to_word(report_text, filename_prefix="Generated_Analysis_Report"
         doc.save(filename)
         return filename
     except Exception as e:
-        st.error(f"Error saving Word document: {str(e)}")
+        st.error(f"Error saving docx: {str(e)}")
         return None
 
 # Streamlit App Layout
 # Custom Logo Before Title
-LOGO_PATH = "C:\\Users\\bharg\\OneDrive\\Desktop\\ces_main\\logo.png"
+LOGO_PATH = "logo.png"
 if os.path.exists(LOGO_PATH):
     st.image(LOGO_PATH, width=150)  # Resized to fit before title
 else:
     st.warning("Logo file not found at 'logo.png'. Please place your logo in `C:\\Users\\bharg\\OneDrive\\Desktop\\ces_main`.")
 
-st.title("Enterprise Document Analysis Assistant")
-st.subheader("Upload Documents for Q&A and Generate Analysis Reports")
+st.title("PDF Analyst Chatbot and Report Generator")
+st.subheader("Upload PDF for Q&A and Generate Analysis Reports")
 
 # File Uploader
-uploaded_files = st.file_uploader("Upload Documents (PDF, Images, Text)", accept_multiple_files=True)
+uploaded_files = st.file_uploader("Upload PDF", accept_multiple_files=True)
 
 # Store extracted document contents and chunks
 documents_content = []
@@ -251,7 +253,7 @@ if uploaded_files:
         if embeddings is not None:
             faiss_index = create_faiss_index(embeddings)
             if faiss_index:
-                st.success("Documents indexed successfully in Vector DB.")
+                st.success("PDf indexed successfully in Vector DB.")
             else:
                 st.error("Failed to create Vector DB index. Check error messages above.")
                 st.stop()
@@ -260,8 +262,8 @@ if uploaded_files:
             st.stop()
 
 # Generate Analysis Report Button
-if st.button("Generate Analysis Report") and uploaded_files:
-    with st.spinner("Generating Analysis Report..."):
+if st.button("Generate  Report") and uploaded_files:
+    with st.spinner("Generating Report..."):
         # Use a general query for report retrieval
         report_query = "Key insights, risks, and recommendations from the documents"
         relevant = retrieve_relevant_chunks(report_query, faiss_index, chunks, chunk_metadata, k=10)
@@ -297,7 +299,7 @@ else:
         st.info("Please upload at least one document to generate the report.")
 
 # Chat Input for Q&A
-st.markdown("### Document Q&A")
+st.markdown("### Chatbot for PDf  ")
 # Initialize chat history
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
@@ -310,7 +312,7 @@ for message in st.session_state.chat_history:
         st.markdown(message["content"])
 
 # Chat Input
-user_query = st.chat_input("Ask a question about the documents:")
+user_query = st.chat_input("Ask a question about the PDF:")
 if user_query and faiss_index:
     # Display user message
     with st.chat_message("user"):
