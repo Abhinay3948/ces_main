@@ -52,6 +52,9 @@ if not API_KEY:
 
 genai.configure(api_key=API_KEY)
 
+# Set Streamlit layout to wide for desktop, but allow responsive CSS for mobile
+st.set_page_config(layout="wide")
+
 # Sidebar Instructions
 st.sidebar.title("Setup Instructions")
 st.sidebar.markdown("""
@@ -78,13 +81,13 @@ GEMINI_API_KEY=your-api-key
 6. Run the app: `python -m streamlit run app.py`
 """)
 
-# Q&A Prompt for Chatbot
 QNA_PROMPT = """
 You are an advanced Retrieval-Augmented Generation (RAG) assistant for enterprise document analysis. 
 Your goal is to deliver only the most relevant information in a highly compressed, easy-to-read format.
 
+
 Response Rules:
-1. **Answer** – Present the key information in 1–2 short, direct sentences (≤2 lines). Compress all retrieved content into minimal words while retaining essential details. Cite document sections if available.  
+1. **Answer** – start with brief description of the equipment that is in question , Present the key information in 1–2 short, direct sentences (≤2 lines). Compress all retrieved content into minimal words while retaining essential details. Cite document sections if available.  
 2. **Recommendations and Insights** – Provide exactly 1–2 concise bullet points. Each should be ≤1 line where possible, strictly ≤2 lines, combining all insights into clear, executive-style statements. Distinguish between:
    - Facts directly from the documents.
    - Inferences or best practices (labeled clearly).
@@ -96,6 +99,7 @@ Guidelines:
 - If multiple documents overlap, merge into a single compact statement.  
 - If the document lacks the information, state clearly: "The document does not provide this information."
 """
+
 
 
 
@@ -220,15 +224,69 @@ def save_report_to_word(report_text, filename_prefix="Generated_Analysis_Report"
         return None
 
 # Streamlit App Layout
-# Custom Logo Before Title
+# Custom Logo and Title with Responsive Layout
 LOGO_PATH = "logo.png"
-if os.path.exists(LOGO_PATH):
-    st.image(LOGO_PATH, width=150)  # Resized to fit before title
-else:
-    st.warning("Logo file not found at 'logo.png'. Please place your logo in `C:\\Users\\bharg\\OneDrive\\Desktop\\ces_main`.")
+with st.container():
+    # Responsive columns: more balanced for desktop, stacked for mobile
+    col1, col2 = st.columns([1, 6])
+    with col1:
+        if os.path.exists(LOGO_PATH):
+            st.markdown(
+                """
+                <style>
+                @media (max-width: 600px) {
+                    .logo-img {max-width: 48px !important; height: auto !important;}
+                }
+                @media (min-width: 601px) {
+                    .logo-img {max-width: 72px !important; height: auto !important;}
+                }
+                </style>
+                """,
+                unsafe_allow_html=True
+            )
+            st.image(LOGO_PATH, output_format="auto", caption=None, use_container_width=False, clamp=False, channels="RGB", width=72)
+        else:
+            st.warning("Logo file not found at 'logo.png'. Please place your logo in `C:\\Users\\bharg\\OneDrive\\Desktop\\ces_main`.")
+    with col2:
+        st.markdown(
+            """
+            <style>
+            .responsive-heading {
+                font-size: clamp(1.1rem, 4vw, 2.2rem);
+                text-align: left;
+                margin-top: 0;
+                margin-bottom: 0;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                font-weight: 700;
+                letter-spacing: -1px;
+            }
+            @media (max-width: 600px) {
+                .responsive-heading {
+                    font-size: 1.1rem !important;
+                }
+            }
+            </style>
+            <h1 class="responsive-heading">PDF Analyst Chatbot and Report Generator</h1>
+            """,
+            unsafe_allow_html=True
+        )
 
-st.title("PDF Analyst Chatbot and Report Generator")
-st.subheader("Upload PDF for Q&A and Generate Analysis Reports")
+# Adjusted subheader size for responsiveness
+st.markdown(
+    """
+    <style>
+    .responsive-subheader {
+        font-size: clamp(0.9rem, 2.5vw, 1.3rem);
+        margin-top: 10px;
+        margin-bottom: 0;
+    }
+    </style>
+    <div class="responsive-subheader">Upload PDF for Q&amp;A and Generate Analysis Reports</div>
+    """,
+    unsafe_allow_html=True
+)
 
 # File Uploader
 uploaded_files = st.file_uploader("Upload PDF", accept_multiple_files=True)
@@ -299,7 +357,7 @@ else:
         st.info("Please upload at least one PDF to generate the report.")
 
 # Chat Input for Q&A
-st.markdown("### Chatbot for PDf  ")
+st.markdown("### Ask RE Analyst  ")
 # Initialize chat history
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
