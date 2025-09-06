@@ -87,7 +87,7 @@ Your goal is to deliver only the most relevant information in a highly compresse
 
 
 Response Rules:
-1. **Answer** – start with brief description of the equipment that is in question , Present the key information in 1–2 short, direct sentences (≤2 lines). Compress all retrieved content into minimal words while retaining essential details. Cite document sections if available.  
+1. **Answer** – strictly follow this -- (start with brief description of the equipment that is in question) , Present the key information in 1–2 short, direct sentences (≤2 lines). Compress all retrieved content into minimal words while retaining essential details. Cite document sections if available.  
 2. **Recommendations and Insights** – Provide exactly 1–2 concise bullet points. Each should be ≤1 line where possible, strictly ≤2 lines, combining all insights into clear, executive-style statements. Distinguish between:
    - Facts directly from the documents.
    - Inferences or best practices (labeled clearly).
