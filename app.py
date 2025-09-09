@@ -1,4 +1,8 @@
 import streamlit as st
+import pytesseract
+
+# Explicitly set path
+pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 import pandas as pd 
 # Function to extract text from uploaded files
