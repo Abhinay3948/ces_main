@@ -1,4 +1,7 @@
 import streamlit as st
+import pandas as pd 
+# Function to extract text from uploaded files
+from pdf2image import convert_from_bytes  # ADD THIS IMPORT at top
 try:
     import google.generativeai as genai
 except ImportError:
@@ -83,23 +86,24 @@ GEMINI_API_KEY=your-api-key
 
 QNA_PROMPT = """
 You are an advanced Retrieval-Augmented Generation (RAG) assistant for enterprise document analysis. 
-Your task is to deliver only the most relevant information in a highly compressed, easy-to-read format. 
-Strictly follow the response structure and rules below to ensure clear, crisp outputs.
+Your goal is to deliver only the most relevant information in a highly compressed, easy-to-read format.
+
 
 Response Rules:
-1. **Answer** – Begin with a brief restatement of the user’s question for context, then provide the answer in 1–2 short, direct sentences (≤2 lines). Compress all retrieved content into minimal words while keeping essential details. Cite document sections if available.  
-2. **Recommendations and Insights** – Provide exactly 1–2 bullet points. Each must be ≤2 lines, compressing all insights into concise, executive-ready statements. Clearly distinguish between:
-   - Facts taken directly from the documents.
-   - Inferences, best practices, or external knowledge (explicitly labeled as such).
+1. **Answer** – start with brief description of the equipment that is in question , Present the key information in 1–2 short, direct sentences (≤2 lines). Compress all retrieved content into minimal words while retaining essential details. Cite document sections if available.  
+2. **Recommendations and Insights** – Provide exactly 1–2 concise bullet points. Each should be ≤1 line where possible, strictly ≤2 lines, combining all insights into clear, executive-style statements. Distinguish between:
+   - Facts directly from the documents.
+   - Inferences or best practices (labeled clearly).
 
 Guidelines:
-- Prioritize brevity and clarity: every response must be instantly scannable.  
-- Avoid filler, repetition, or verbose explanations.  
-- Use simple, professional language for readability.  
-- If multiple documents overlap, synthesize into a single compact statement.  
-- If information is unavailable, state clearly: "The document does not provide this information."  
-- Do not deviate from the specified format under any circumstance.
+- Always prioritize brevity and clarity: answers must be instantly scannable.  
+- No filler, repetition, or verbose explanations.  
+- Use simple, structured language for readability.  
+- If multiple documents overlap, merge into a single compact statement.  
+- If the document lacks the information, state clearly: "The document does not provide this information."
 """
+
+
 
 
 
@@ -125,32 +129,50 @@ Guidelines:
 - The final output must be executive-ready: short, fact-based, and strategically insightful.
 """
 
-
-
-
-# Function to extract text from uploaded files
 def extract_text_from_file(uploaded_file):
     file_type = uploaded_file.type
     try:
         if "pdf" in file_type:
             reader = PdfReader(uploaded_file)
             text = ""
+            # Step 1: Extract normal text if available
             for page in reader.pages:
                 extracted = page.extract_text()
                 if extracted:
                     text += extracted + "\n"
+
+            # Step 2: OCR on PDF images (for scanned/image PDFs)
+            uploaded_file.seek(0)  # reset pointer for pdf2image
+            images = convert_from_bytes(uploaded_file.read())
+            for img in images:
+                ocr_text = pytesseract.image_to_string(img)
+                if ocr_text.strip():
+                    text += ocr_text + "\n"
+
             return text
+
         elif "image" in file_type:
             image = Image.open(uploaded_file)
-            text = pytesseract.image_to_string(image)
-            return text
+            return pytesseract.image_to_string(image)
+
         elif "text" in file_type:
             return uploaded_file.read().decode("utf-8")
+
+        elif "csv" in file_type:
+            df = pd.read_csv(uploaded_file)
+            return df.to_string(index=False)
+
+        elif ("excel" in file_type) or uploaded_file.name.endswith((".xls", ".xlsx")):
+            df = pd.read_excel(uploaded_file)
+            return df.to_string(index=False)
+
         else:
             return "Unsupported file type."
     except Exception as e:
         st.error(f"Error processing {uploaded_file.name}: {str(e)}")
         return ""
+
+
 
 # Function to chunk text for embedding
 def chunk_text(text, chunk_size=500):
