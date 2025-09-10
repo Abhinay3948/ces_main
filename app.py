@@ -35,27 +35,10 @@ except ImportError:
     st.error("Missing 'python-docx'. Install it using: `pip install python-docx`")
     st.stop()
 try:
-    import pandas as pd
-except ImportError:
-    st.error("Missing 'pandas'. Install it using: `pip install pandas`")
-    st.stop()
-try:
     from dotenv import load_dotenv
 except ImportError:
     st.error("Missing 'python-dotenv'. Install it using: `pip install python-dotenv`")
     st.stop()
-try:
-    import pdfplumber
-except ImportError:
-    st.error("Missing 'pdfplumber'. Install it using: `pip install pdfplumber`")
-    st.stop()
-try:
-    from transformers import CLIPProcessor, CLIPModel
-except ImportError:
-    st.error("Missing 'transformers'. Install it using: `pip install transformers torch`")
-    st.stop()
-import torch
-import base64
 import os
 from datetime import datetime
 import io
@@ -69,10 +52,6 @@ if not API_KEY:
 
 genai.configure(api_key=API_KEY)
 
-# Initialize CLIP model
-clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-
 # Set Streamlit layout to wide for desktop, but allow responsive CSS for mobile
 st.set_page_config(layout="wide")
 
@@ -81,7 +60,21 @@ st.sidebar.title("Setup Instructions")
 st.sidebar.markdown("""
 **Required Setup**:
 1. Save the following as `requirements.txt` in your project folder and run `pip install -r requirements.txt`:
+```
+streamlit==1.38.0
+google-generativeai==0.8.3
+PyPDF2==3.0.1
+pytesseract==0.3.13
+Pillow==10.4.0
+python-docx==1.1.2
+numpy==2.1.1
+faiss-cpu==1.8.0
+python-dotenv==1.0.1
+```
 2. Create a `.env` file in `C:\\Users\\bharg\\OneDrive\\Desktop\\ces_main` with:
+```
+GEMINI_API_KEY=your-api-key
+```
 3. Install Tesseract OCR: [Download](https://github.com/UB-Mannheim/tesseract/wiki) and add to PATH (e.g., `C:\\Program Files\\Tesseract-OCR`).
 4. Install Microsoft Visual C++ Build Tools: [Download](https://visualstudio.microsoft.com/visual-cpp-build-tools/) and select 'Desktop development with C++'.
 5. Place your logo at `C:\\Users\\bharg\\OneDrive\\Desktop\\ces_main\\logo.png`.
@@ -90,101 +83,89 @@ st.sidebar.markdown("""
 
 QNA_PROMPT = """
 You are an advanced Retrieval-Augmented Generation (RAG) assistant for enterprise document analysis. 
+Your goal is to deliver only the most relevant information in a highly compressed, easy-to-read format.
+also strictly folow the output response as given below in response rules the foramt should be follwing as given in below.
 Your task is to deliver only the most relevant information in a highly compressed, easy-to-read format. 
 Strictly follow the response structure and rules below to ensure clear, crisp outputs.
 
 Response Rules:
-1. **Answer** – Begin with a brief restatement of the user’s question for context, then provide the answer in 1–2 short, direct sentences (≤2 lines). Compress all retrieved content, including text from documents or image descriptions (e.g., [Image on page X]), into minimal words while keeping essential details. Cite document sections or image metadata if available.  
+1. **Answer** – start with brief description of question and continue the following answering in it , Present the key information in 1–2 short, direct sentences (≤2 lines). Compress all retrieved content into minimal words while retaining essential details. Cite document sections if available.  
+2. **Recommendations and Insights** – Provide exactly 1–2 concise bullet points. Each should be ≤1 line where possible, strictly ≤2 lines, combining all insights into clear, executive-style statements. Distinguish between:
+   - Facts directly from the documents.
+   - Inferences or best practices (labeled clearly).
+1. **Answer** – Begin with a brief restatement of the user’s question for context, then provide the answer in 1–2 short, direct sentences (≤2 lines). Compress all retrieved content into minimal words while keeping essential details. Cite document sections if available.  
 2. **Recommendations and Insights** – Provide exactly 1–2 bullet points. Each must be ≤2 lines, compressing all insights into concise, executive-ready statements. Clearly distinguish between:
-   - Facts taken directly from documents or image content.
+   - Facts taken directly from the documents.
    - Inferences, best practices, or external knowledge (explicitly labeled as such).
 
 Guidelines:
+- Always prioritize brevity and clarity: answers must be instantly scannable.  
+- No filler, repetition, or verbose explanations.  
+- Use simple, structured language for readability.  
+- If multiple documents overlap, merge into a single compact statement.  
+- If the document lacks the information, state clearly: "The document does not provide this information."
 - Prioritize brevity and clarity: every response must be instantly scannable.  
 - Avoid filler, repetition, or verbose explanations.  
 - Use simple, professional language for readability.  
-- Synthesize overlapping content from documents and images into a single compact statement.  
-- If information is unavailable, state clearly: "The document or image does not provide this information."  
+- If multiple documents overlap, synthesize into a single compact statement.  
+- If information is unavailable, state clearly: "The document does not provide this information."  
 - Do not deviate from the specified format under any circumstance.
 """
 
+
+
+
+
+
+# Generated Analysis Report Prompt (Big 4 Showcase)
 REPORT_PROMPT = """
 You are an elite consulting assistant producing Big 4–style executive reports (KPMG, Deloitte, PwC, EY). 
-Transform the provided documents and images into a professional, fact-based, and insight-driven analysis that is concise, structured, and decision-focused.
+Transform the provided documents into a professional, fact-based, and insight-driven analysis that is concise, structured, and decision-focused.
 
-Structure:
-1. **Executive Summary** – High-level overview in minimal lines, capturing critical takeaways from documents and images (e.g., [Image on page X]).
-2. **Key Insights and Findings** – Condensed, data-driven highlights in bullets or tables, including image-derived insights.
-3. **Risk Assessment & Opportunities** – Summarize risks, compliance issues, and opportunities in 1–3 lines, including image-based insights.
-4. **Strategic Recommendations** – 2–3 actionable recommendations, each ≤2 lines, marking fact-based (from documents/images) vs. inferences.
-5. **Supporting Evidence** – Cite document excerpts or image descriptions (e.g., [Image on page X]) in 1 line per point.
+Structure (adapt dynamically based on content relevance):
+1. **Executive Summary** – Provide a high-level overview in the fewest possible lines, capturing only the most critical takeaways and implications.  
+2. **Key Insights and Findings** – Present condensed, data-driven highlights. Use short bullets or tables. Compress all relevant details into minimal lines without losing meaning.  
+3. **Risk Assessment & Opportunities** – Summarize the main risks, compliance issues, and growth opportunities in the most compressed form possible (preferably 1–3 short lines).  
+4. **Strategic Recommendations** – Provide 2–3 actionable recommendations, each expressed in a single concise statement (≤2 lines). Clearly mark what is fact-based vs inference/best practice.  
+5. **Supporting Evidence** – Cite relevant document excerpts in a compressed manner (1 line per evidence point).  
 
 Guidelines:
-- Compress multi-line content into minimal statements while preserving key meaning.  
-- No filler or repetition; every line must deliver decision-making value.  
-- Maintain a professional, neutral, authoritative tone.  
-- Use bullets/tables for clarity.  
-- State if information is missing and suggest next steps.  
-- Output must be executive-ready: short, fact-based, and insightful.
+- Prioritize brevity and density: compress multi-line content into minimal statements while preserving key meaning.  
+- No filler or repetition. Every line should deliver decision-making value.  
+- Maintain a professional, neutral, and authoritative consulting tone.  
+- Use bullets/tables instead of long paragraphs wherever possible.  
+- Explicitly state if information is missing and suggest clear next steps.  
+- The final output must be executive-ready: short, fact-based, and strategically insightful.
 """
 
+
+
+
+# Function to extract text from uploaded files
 def extract_text_from_file(uploaded_file):
     file_type = uploaded_file.type
     try:
         if "pdf" in file_type:
-            items = []  # List of {'type': 'text' or 'image', 'content': str or bytes, 'metadata': dict}
-            uploaded_file.seek(0)
-            with pdfplumber.open(uploaded_file) as pdf:
-                for page_num, page in enumerate(pdf.pages, start=1):
-                    page_text = page.extract_text() or ""
-                    if page_text:
-                        items.append({
-                            'type': 'text',
-                            'content': page_text,
-                            'metadata': {'page': page_num}
-                        })
-                    # Extract images with positions
-                    for img_idx, img in enumerate(page.images):
-                        try:
-                            x0, top, x1, bottom = img['x0'], img['top'], img['x1'], img['bottom']
-                            # Validate bounding box
-                            if x0 >= x1 or top >= bottom or x0 < 0 or top < 0 or x1 > page.width or bottom > page.height:
-                                st.warning(f"Skipping image {img_idx} on page {page_num}: Invalid bounding box ({x0},{top},{x1},{bottom})")
-                                continue
-                            cropped_page = page.crop((x0, top, x1, bottom))
-                            pil_img = cropped_page.to_image().original
-                            buffer = io.BytesIO()
-                            pil_img.save(buffer, format="PNG")
-                            image_bytes = buffer.getvalue()
-                            position = (x0, top, x1, bottom)
-                            items.append({
-                                'type': 'image',
-                                'content': image_bytes,
-                                'metadata': {'page': page_num, 'position': position, 'img_idx': img_idx}
-                            })
-                        except Exception as e:
-                            st.warning(f"Error extracting image {img_idx} on page {page_num}: {str(e)}")
-            return items
+            reader = PdfReader(uploaded_file)
+            text = ""
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted + "\n"
+            return text
         elif "image" in file_type:
             image = Image.open(uploaded_file)
-            buffer = io.BytesIO()
-            image.save(buffer, format="PNG")
-            return [{'type': 'image', 'content': buffer.getvalue(), 'metadata': {}}]
+            text = pytesseract.image_to_string(image)
+            return text
         elif "text" in file_type:
-            text = uploaded_file.read().decode("utf-8")
-            return [{'type': 'text', 'content': text, 'metadata': {}}]
-        elif "csv" in file_type:
-            df = pd.read_csv(uploaded_file)
-            return [{'type': 'text', 'content': df.to_string(index=False), 'metadata': {}}]
-        elif ("excel" in file_type) or uploaded_file.name.endswith((".xls", ".xlsx")):
-            df = pd.read_excel(uploaded_file)
-            return [{'type': 'text', 'content': df.to_string(index=False), 'metadata': {}}]
+            return uploaded_file.read().decode("utf-8")
         else:
             return "Unsupported file type."
     except Exception as e:
         st.error(f"Error processing {uploaded_file.name}: {str(e)}")
         return ""
 
+# Function to chunk text for embedding
 def chunk_text(text, chunk_size=500):
     if not text or text == "Unsupported file type.":
         return []
@@ -194,39 +175,26 @@ def chunk_text(text, chunk_size=500):
         chunks.append(" ".join(words[i:i + chunk_size]))
     return chunks
 
-def get_embeddings(items):
+# Function to generate embeddings using Gemini
+def get_embeddings(text_chunks):
     embeddings = []
-    for item in items:
+    for chunk in text_chunks:
         try:
-            if item['type'] == 'text':
-                inputs = clip_processor(text=[item['content']], return_tensors="pt", padding=True, truncation=True)
-                with torch.no_grad():
-                    emb = clip_model.get_text_features(**inputs).cpu().numpy()
-                    if emb.shape[0] != 1:
-                        st.warning(f"Skipping text item: Unexpected embedding shape {emb.shape}")
-                        continue
-                    emb = emb[0]
-            elif item['type'] == 'image':
-                pil_img = Image.open(io.BytesIO(item['content']))
-                inputs = clip_processor(images=[pil_img], return_tensors="pt")  # Explicit single image
-                with torch.no_grad():
-                    emb = clip_model.get_image_features(**inputs).cpu().numpy()
-                    if emb.shape[0] != 1:
-                        st.warning(f"Skipping image item: Unexpected embedding shape {emb.shape}")
-                        continue
-                    emb = emb[0]
-            embeddings.append(emb)
+            result = genai.embed_content(
+                model="models/text-embedding-004",
+                content=chunk,
+                task_type="RETRIEVAL_DOCUMENT"
+            )
+            embeddings.append(result['embedding'])
         except Exception as e:
-            st.warning(f"Error generating embedding for item: {str(e)}")
-            continue
-    if not embeddings:
-        st.error("No valid embeddings generated.")
-        return None
+            st.error(f"Error generating embedding for chunk: {str(e)}")
+            return None
     return np.array(embeddings, dtype=np.float32)
 
+# Function to initialize FAISS index
 def create_faiss_index(embeddings):
     try:
-        dimension = embeddings.shape[1]  # CLIP: 512
+        dimension = embeddings.shape[1]
         index = faiss.IndexFlatL2(dimension)
         index.add(embeddings)
         return index
@@ -234,21 +202,21 @@ def create_faiss_index(embeddings):
         st.error(f"Error creating FAISS index: {str(e)}")
         return None
 
-def retrieve_relevant_chunks(query, index, items, chunk_metadata, k=5):
+# Function to retrieve relevant chunks
+def retrieve_relevant_chunks(query, index, chunks, chunk_metadata, k=5):
     try:
-        inputs = clip_processor(text=[query], return_tensors="pt", padding=True, truncation=True)
-        with torch.no_grad():
-            query_embedding = clip_model.get_text_features(**inputs).cpu().numpy()
-        distances, indices = index.search(query_embedding, k)
+        query_embedding = get_embeddings([query])[0]
+        distances, indices = index.search(np.array([query_embedding]), k)
         relevant = []
         for idx in indices[0]:
-            if idx < len(items):
-                relevant.append((items[idx], chunk_metadata[idx]))
+            if idx < len(chunks):
+                relevant.append((chunks[idx], chunk_metadata[idx]))
         return relevant
     except Exception as e:
         st.error(f"Error retrieving relevant chunks: {str(e)}")
         return []
 
+# Function to save report as Word document
 def save_report_to_word(report_text, filename_prefix="Generated_Analysis_Report"):
     try:
         doc = docx.Document()
@@ -268,8 +236,10 @@ def save_report_to_word(report_text, filename_prefix="Generated_Analysis_Report"
         return None
 
 # Streamlit App Layout
+# Custom Logo and Title with Responsive Layout
 LOGO_PATH = "logo.png"
 with st.container():
+    # Responsive columns: more balanced for desktop, stacked for mobile
     col1, col2 = st.columns([1, 6])
     with col1:
         if os.path.exists(LOGO_PATH):
@@ -315,6 +285,7 @@ with st.container():
             unsafe_allow_html=True
         )
 
+# Adjusted subheader size for responsiveness
 st.markdown(
     """
     <style>
@@ -324,91 +295,64 @@ st.markdown(
         margin-bottom: 0;
     }
     </style>
-    <div class="responsive-subheader">Upload files (PDF, CSV, XLSX) for Q&amp;A and Generate Analysis Reports</div>
+    <div class="responsive-subheader">Upload PDF for Q&amp;A and Generate Analysis Reports</div>
     """,
     unsafe_allow_html=True
 )
 
 # File Uploader
-uploaded_files = st.file_uploader("Upload files (PDF, CSV, XLSX)", type=["pdf", "csv", "xls", "xlsx"], accept_multiple_files=True)
+uploaded_files = st.file_uploader("Upload PDF", accept_multiple_files=True)
 
 # Store extracted document contents and chunks
-items_list = []
+documents_content = []
+chunks = []
 chunk_metadata = []
 faiss_index = None
 if uploaded_files:
-    for file_idx, uploaded_file in enumerate(uploaded_files):
-        items = extract_text_from_file(uploaded_file)
-        if items and items != "Unsupported file type.":
-            for item_idx, item in enumerate(items):
-                item['metadata']['file'] = uploaded_file.name
-                item['metadata']['global_idx'] = len(items_list)
-                items_list.append(item)
-                chunk_metadata.append((uploaded_file.name, item_idx))
-    if items_list:
-        final_items = []
-        final_metadata = []
-        item_idx = 0
-        for item in items_list:
-            if item['type'] == 'text':
-                text_chunks = chunk_text(item['content'])
-                for chunk_idx, chunk in enumerate(text_chunks):
-                    final_items.append({
-                        'type': 'text',
-                        'content': chunk,
-                        'metadata': {
-                            'file': item['metadata']['file'],
-                            'page': item['metadata'].get('page', 0),
-                            'chunk_idx': chunk_idx
-                        }
-                    })
-                    final_metadata.append((item['metadata']['file'], item_idx))
-                    item_idx += 1
-            else:  # Image
-                final_items.append(item)
-                final_metadata.append((item['metadata']['file'], item_idx))
-                item_idx += 1
-        items_list = final_items
-        chunk_metadata = final_metadata
+    for uploaded_file in uploaded_files:
+        content = extract_text_from_file(uploaded_file)
+        if content and content != "Unsupported file type.":
+            documents_content.append(f"--- Document: {uploaded_file.name} ---\n{content}")
+            doc_chunks = chunk_text(content)
+            chunks.extend(doc_chunks)
+            chunk_metadata.extend([(uploaded_file.name, i) for i in range(len(doc_chunks))])
 
-        embeddings = get_embeddings(items_list)
-        if embeddings is not None and embeddings.size > 0:
+    # Initialize Vector DB
+    if chunks:
+        embeddings = get_embeddings(chunks)
+        if embeddings is not None:
             faiss_index = create_faiss_index(embeddings)
             if faiss_index:
-                st.success("Files indexed successfully in Vector DB (multimodal).")
+                st.success("PDf indexed successfully in Vector DB.")
             else:
                 st.error("Failed to create Vector DB index. Check error messages above.")
                 st.stop()
         else:
-            st.error("No valid embeddings generated. Check warnings for skipped items.")
+            st.error("Failed to generate embeddings. Check error messages above.")
             st.stop()
 
 # Generate Analysis Report Button
-if st.button("Generate Report") and uploaded_files:
+if st.button("Generate  Report") and uploaded_files:
     with st.spinner("Generating Report..."):
+        # Use a general query for report retrieval
         report_query = "Key insights, risks, and recommendations from the documents"
-        relevant = retrieve_relevant_chunks(report_query, faiss_index, items_list, chunk_metadata, k=10)
-        content_list = [REPORT_PROMPT + "\n\nDocument Content for Analysis:\n"]
-        for rel_item, meta in relevant:
-            item = rel_item
-            file_name, _ = meta
-            if item['type'] == 'text':
-                content_list.append(f"Relevant Text from {file_name} (Page {item['metadata'].get('page', 0)}, Chunk {item['metadata'].get('chunk_idx', 0)}):\n{item['content']}\n")
-            elif item['type'] == 'image':
-                position = item['metadata']['position']
-                content_list.append(f"Relevant Image from {file_name} (Page {item['metadata']['page']}, Position {position}):\n")
-                content_list.append({
-                    'inline_data': {
-                        'mime_type': 'image/png',
-                        'data': base64.b64encode(item['content']).decode()
-                    }
-                })
+        relevant = retrieve_relevant_chunks(report_query, faiss_index, chunks, chunk_metadata, k=10)
+        relevant_content = "\n\n".join([f"Relevant Section from {meta[0]} (Chunk {meta[1]}): {chunk}" for chunk, meta in relevant])
+
+        # Construct full prompt for report
+        full_prompt = f"{REPORT_PROMPT}\n\nDocument Content for Analysis:\n{relevant_content}"
+
+        # Call Gemini API
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            response = model.generate_content(content_list)
+            model = genai.GenerativeModel('gemini-2.0-flash')
+            response = model.generate_content(full_prompt)
             report_text = response.text
+
+            # Display the Report
             st.markdown("### Generated Analysis Report")
             st.markdown(report_text)
+
+            # Save to Word Document
             word_filename = save_report_to_word(report_text)
             if word_filename:
                 with open(word_filename, "rb") as file:
@@ -422,47 +366,44 @@ if st.button("Generate Report") and uploaded_files:
             st.error(f"Error generating report: {str(e)}")
 else:
     if not uploaded_files:
-        st.info("Please upload at least one file to generate the report.")
+        st.info("Please upload at least one PDF to generate the report.")
 
 # Chat Input for Q&A
-st.markdown("### Ask RE Analyst")
+st.markdown("### Ask RE Analyst  ")
+# Initialize chat history
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
+# Display chat history
 for message in st.session_state.chat_history:
     with st.chat_message(message["role"]):
         if message["role"] == "assistant" and os.path.exists(LOGO_PATH):
             st.image(LOGO_PATH, width=50)
         st.markdown(message["content"])
 
-user_query = st.chat_input("Ask a question about the files:")
+# Chat Input
+user_query = st.chat_input("Ask a question about the PDF:")
 if user_query and faiss_index:
+    # Display user message
     with st.chat_message("user"):
         st.markdown(user_query)
     st.session_state.chat_history.append({"role": "user", "content": user_query})
 
     with st.spinner("Generating answer..."):
-        relevant = retrieve_relevant_chunks(user_query, faiss_index, items_list, chunk_metadata)
-        content_list = [QNA_PROMPT + "\n\nRelevant Document Content:\n"]
-        for rel_item, meta in relevant:
-            item = rel_item
-            file_name, _ = meta
-            if item['type'] == 'text':
-                content_list.append(f"Relevant Text from {file_name} (Page {item['metadata'].get('page', 0)}, Chunk {item['metadata'].get('chunk_idx', 0)}):\n{item['content']}\n")
-            elif item['type'] == 'image':
-                position = item['metadata']['position']
-                content_list.append(f"Relevant Image from {file_name} (Page {item['metadata']['page']}, Position {position}):\n")
-                content_list.append({
-                    'inline_data': {
-                        'mime_type': 'image/png',
-                        'data': base64.b64encode(item['content']).decode()
-                    }
-                })
-        content_list.append(f"\nUser Question: {user_query}")
+        # Retrieve relevant chunks
+        relevant = retrieve_relevant_chunks(user_query, faiss_index, chunks, chunk_metadata)
+        relevant_content = "\n\n".join([f"Relevant Section from {meta[0]} (Chunk {meta[1]}): {chunk}" for chunk, meta in relevant])
+
+        # Construct full prompt for Q&A
+        full_prompt = f"{QNA_PROMPT}\n\nRelevant Document Content:\n{relevant_content}\n\nUser Question: {user_query}"
+
+        # Call Gemini API
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            response = model.generate_content(content_list)
+            model = genai.GenerativeModel('gemini-2.0-flash')
+            response = model.generate_content(full_prompt)
             answer_text = response.text
+
+            # Display assistant message with logo
             with st.chat_message("assistant"):
                 if os.path.exists(LOGO_PATH):
                     st.image(LOGO_PATH, width=50)
@@ -472,10 +413,10 @@ if user_query and faiss_index:
             st.error(f"Error generating answer: {str(e)}")
 else:
     if not uploaded_files:
-        st.info("Please upload at least one file to begin Q&A.")
+        st.info("Please upload at least one PDF to begin Q&A.")
     if not faiss_index and uploaded_files:
         st.info("Document indexing failed. Check error messages above.")
 
 # Footer
 st.sidebar.markdown("---")
-st.sidebar.info("This app uses Google Gemini 1.5 Flash, CLIP, and FAISS for multimodal document analysis. For support, check the Setup Instructions above.")
+st.sidebar.info("This app uses Google Gemini 2.0 Flash and FAISS for document analysis. For support, check the Setup Instructions above.")
